@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Will You Love This Movie?</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<div id="page-overlay"><div class="big-spinner"></div></div>
+
+<div class="wrap">
+
+  <section class="hero">
+    <h1>🎬 Will You Love This Movie?</h1>
+    <p class="tagline">An AI trained on your personal IMDb ratings.</p>
+    <form class="search" method="POST">
+      <input type="text" name="movie" placeholder="Search any movie..." required
+             value="{{ request.form.get('movie', '') }}">
+      <button type="submit" class="predict-btn">
+        <span class="spinner"></span>
+        <span class="btn-label">Predict</span>
+      </button>
+    </form>
+    {% if error %}
+      <div class="error-note">{{ error }}</div>
+    {% endif %}
+  </section>
+
+  {% if result %}
+  {% set rec = result.recommendation|lower %}
+  {% set filled_stars = (result.predicted_rating / 1)|round(0, 'common')|int %}
+  <div class="results">
+
+    <!-- Movie info card -->
+    <section class="movie-card glass">
+      <div class="poster">
+        {% if result.details.poster %}
+          <img src="{{ result.details.poster }}" alt="{{ result.title }} poster">
+        {% else %}
+          <div class="no-poster">🎬</div>
+        {% endif %}
+      </div>
+      <h2>{{ result.title }}</h2>
+      <div class="meta">
+        {{ result.details.year }}
+        {% for g in result.details.genres[:3] %} • {{ g }}{% endfor %}
+      </div>
+
+      <div class="stars">
+        {% for i in range(1, 11) %}{% if i <= filled_stars %}★{% else %}<span class="dim">★</span>{% endif %}{% endfor %}
+      </div>
+
+      <div class="pred-label">Predicted Rating</div>
+      <div class="pred-number">{{ result.predicted_rating }} <span style="font-size:20px;color:var(--text-muted);font-weight:600;">/ 10</span></div>
+
+      <span class="verdict-badge {{ rec }}">
+        {% if rec == 'watch' %}🟢 DEFINITELY WATCH
+        {% elif rec == 'maybe' %}🟡 MAYBE WATCH IT
+        {% else %}🔴 PROBABLY SKIP{% endif %}
+      </span>
+    </section>
+
+    <!-- Prediction summary -->
+    <section class="section">
+      <div class="stat-row">
+        <div class="stat-card glass">
+          <div class="icon">⭐</div>
+          <div class="big">{{ result.predicted_rating }}/10</div>
+          <div class="label">Predicted Rating</div>
+        </div>
+        <div class="stat-card glass">
+          <div class="icon">❤️</div>
+          <div class="big">{{ (result.probability_like * 100)|round(0)|int }}%</div>
+          <div class="label">You'll Like It</div>
+        </div>
+        <div class="stat-card glass">
+          <div class="icon">🎯</div>
+          <div class="big">{{ (result.confidence * 100)|round(0)|int }}%</div>
+          <div class="label">Confidence</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Why -->
+    {% if result.reasons_positive_english or result.reasons_negative_english %}
+    <section class="section">
+      {% if rec == 'skip' %}
+        <h3>Why the AI has doubts</h3>
+      {% elif rec == 'maybe' %}
+        <h3>Why the AI is on the fence</h3>
+      {% else %}
+        <h3>Why the AI thinks you'll enjoy it</h3>
+      {% endif %}
+      <div class="reasons-list">
+        {% set primary = result.reasons_negative_english if rec == 'skip' else result.reasons_positive_english %}
+        {% set secondary = result.reasons_positive_english if rec == 'skip' else result.reasons_negative_english %}
+        {% for r in primary %}
+          <div class="reason good"><span class="mark">{% if rec != 'skip' %}✓{% else %}•{% endif %}</span><span>{{ r }}</span></div>
+        {% endfor %}
+        {% for r in secondary %}
+          <div class="reason caution"><span class="mark">•</span><span>{{ r }}</span></div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    <!-- Advanced details -->
+    <details class="advanced glass">
+      <summary>For the curious: how the model got here <span class="chevron">▾</span></summary>
+      <div class="advanced-body">
+        <div class="kv"><span class="k">Model used</span><span>{{ result.model_used }}</span></div>
+        <div class="kv"><span class="k">Out-of-fold MAE</span><span>±{{ result.oof_mae }}</span></div>
+        <div class="kv"><span class="k">Probability (like)</span><span>{{ (result.probability_like*100)|round(1) }}%</span></div>
+        <div class="kv"><span class="k">Confidence</span><span>{{ (result.confidence*100)|round(1) }}%</span></div>
+        <div class="kv"><span class="k">Training size</span><span>{{ result.training_size }} movies</span></div>
+        <div class="raw-block">
+          <h5>Top feature contributions (raw SHAP values)</h5>
+          {% for r in result.reasons_positive %}<div class="raw-line">+ {{ r }}</div>{% endfor %}
+          {% for r in result.reasons_negative %}<div class="raw-line">− {{ r }}</div>{% endfor %}
+        </div>
+      </div>
+    </details>
+
+    <!-- Similar movies -->
+    {% if result.similar_movies_from_your_history %}
+    <section class="section">
+      <h3>Similar Movies From Your History</h3>
+      <div class="row-scroll">
+        {% for m in result.similar_movies_from_your_history %}
+        {% set m_stars = m.your_rating %}
+        <div class="sim-card glass">
+          <div class="poster">
+            {% if m.poster %}<img src="{{ m.poster }}" alt="{{ m.title }} poster">
+            {% else %}<div class="no-poster">🎬</div>{% endif %}
+          </div>
+          <div class="title">{{ m.title }}</div>
+          <div class="stars">
+            {% for i in range(1, 11) %}{% if i <= m_stars %}★{% else %}<span class="dim">★</span>{% endif %}{% endfor %}
+          </div>
+          <div class="label" style="color:var(--text-muted);font-size:12px;margin-top:2px;">You rated: {{ m.your_rating }}/10</div>
+          <div class="sim-pct">Similarity {{ (m.similarity * 100)|round(0)|int }}%</div>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    <!-- Movie details -->
+    <section class="section">
+      <h3>Movie Details</h3>
+      <div class="details-card glass">
+        <div class="poster">
+          {% if result.details.poster %}<img src="{{ result.details.poster }}" alt="{{ result.title }} poster">
+          {% else %}<div class="no-poster">🎬</div>{% endif %}
+        </div>
+        <div>
+          <div class="details-list">
+            <div><div class="k">Genre</div><div class="v">{{ result.details.genres|join(', ') if result.details.genres else '—' }}</div></div>
+            <div><div class="k">Director</div><div class="v">{{ result.details.directors|join(', ') if result.details.directors else '—' }}</div></div>
+            <div><div class="k">Runtime</div><div class="v">{{ result.details.runtime }} min</div></div>
+            <div><div class="k">IMDb Rating</div><div class="v">{{ result.details.imdb_rating }}</div></div>
+          </div>
+          <div class="plot">{{ result.details.plot or "No plot summary available." }}</div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+  {% endif %}
+
+</div>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
